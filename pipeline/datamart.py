@@ -5,7 +5,7 @@ from pyspark.sql import SparkSession, functions as F
 from pyspark.sql.window import Window
 
 logging.basicConfig(
-    filename="datamart.log",
+    filename="datamart.txt",
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(message)s"
 )
