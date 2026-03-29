@@ -134,17 +134,4 @@ finally:
     spark.stop()
     log.info("Spark session fermee")
 
-#docker exec -it spark-master /spark/bin/spark-submit --master spark://spark-master:7077 --deploy-mode client --executor-cores 2 --total-executor-cores 6 --executor-memory 3g --conf spark.executor.memoryOverhead=512m --conf spark.sql.shuffle.partitions=12 --packages org.postgresql:postgresql:42.6.0 --conf spark.app.hdfs.business=hdfs://namenode:9000/data/yelp/yelp_academic_dataset_business.json --conf spark.app.hdfs.checkin=hdfs://namenode:9000/data/yelp/yelp_academic_dataset_checkin.json --conf spark.app.raw.output=hdfs://namenode:9000/data/raw --conf spark.app.pg.url=jdbc:postgresql://postgres-yelp:5432/yelp_dw --conf spark.app.pg.user=yelp --conf spark.app.pg.password=yelp123 /opt/pipeline/feeder.py
-
-# Copier depuis la machine vers le container namenode
-# docker cp yelp_academic_dataset_business.json namenode:/tmp/
-# docker cp yelp_academic_dataset_checkin.json namenode:/tmp/
-# docker cp yelp_academic_dataset_review.json namenode:/tmp/
-
-# Depuis le namenode, pousser vers HDFS
-# docker exec -it namenode hdfs dfs -mkdir -p /data/yelp
-# docker exec -it namenode hdfs dfs -put /tmp/yelp_academic_dataset_business.json /data/yelp/
-# docker exec -it namenode hdfs dfs -put /tmp/yelp_academic_dataset_checkin.json /data/yelp/
-# docker exec -it namenode hdfs dfs -put /tmp/yelp_academic_dataset_review.json /data/yelp/
-
 

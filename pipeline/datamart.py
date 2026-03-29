@@ -177,4 +177,3 @@ finally:
     spark.stop()
     log.info("Spark session fermee")
 
-#docker exec -it spark-master /spark/bin/spark-submit --master spark://spark-master:7077 --deploy-mode client --executor-cores 2 --total-executor-cores 6 --executor-memory 3g --conf spark.executor.memoryOverhead=512m --conf spark.sql.shuffle.partitions=12 --conf spark.sql.warehouse.dir=hdfs://namenode:9000/user/hive/warehouse --conf spark.hadoop.hive.metastore.uris=thrift://hive-metastore:9083 --conf spark.app.pg.url=jdbc:postgresql://postgres-yelp:5432/yelp_dw --conf spark.app.pg.user=yelp --conf spark.app.pg.password=yelp123 --conf spark.app.silver.path=hdfs://namenode:9000/datalake/silver --packages org.postgresql:postgresql:42.6.0 /opt/pipeline/datamart.py

@@ -1,261 +1,258 @@
-[![Gitter chat](https://badges.gitter.im/gitterHQ/gitter.png)](https://gitter.im/big-data-europe/Lobby)
+# ️ Yelp Data Platform — M1 Data Engineering EFREI
 
-# Docker multi-container environment with Hadoop, Spark and Hive
+> Architecture médaillon complète sur données Yelp Open Dataset : ingestion HDFS, traitement Spark, datamarts PostgreSQL, API REST sécurisée JWT et visualisation.
 
-This is it: a Docker multi-container environment with Hadoop (HDFS), Spark and Hive. But without the large memory requirements of a Cloudera sandbox. (On my Windows 10 laptop (with WSL2) it seems to consume a mere 3 GB.)
+**Dépôt GitHub** : https://github.com/ErvinGoby23/big-data-efrei.git
 
-The only thing lacking, is that Hive server doesn't start automatically. To be added when I understand how to do that in docker-compose.
+---
 
+##  Sommaire
 
-## Quick Start
+- [Problématique business](#problématique-business)
+- [Architecture](#architecture)
+- [Stack technique](#stack-technique)
+- [Datasets](#datasets)
+- [Structure du projet](#structure-du-projet)
+- [Lancer le projet](#lancer-le-projet)
+- [Pipeline Spark](#pipeline-spark)
+- [Datamarts](#datamarts)
+- [API REST](#api-rest)
+- [Choix techniques](#choix-techniques)
 
-To deploy an the HDFS-Spark-Hive cluster, run:
-```
-  docker-compose up
-```
+---
 
-`docker-compose` creates a docker network that can be found by running `docker network list`, e.g. `docker-hadoop-spark-hive_default`.
+##  Problématique business
 
-Run `docker network inspect` on the network (e.g. `docker-hadoop-spark-hive_default`) to find the IP the hadoop interfaces are published on. Access these interfaces with the following URLs:
+**Quels restaurants et quelles villes offrent la meilleure expérience client aux États-Unis, et comment cette qualité évolue-t-elle dans le temps ?**
 
-* Namenode: http://<dockerhadoop_IP_address>:9870/dfshealth.html#tab-overview
-* History server: http://<dockerhadoop_IP_address>:8188/applicationhistory
-* Datanode: http://<dockerhadoop_IP_address>:9864/
-* Nodemanager: http://<dockerhadoop_IP_address>:8042/node
-* Resource manager: http://<dockerhadoop_IP_address>:8088/
-* Spark master: http://<dockerhadoop_IP_address>:8080/
-* Spark worker: http://<dockerhadoop_IP_address>:8081/
-* Hive: http://<dockerhadoop_IP_address>:10000
+À partir des avis Yelp, on construit une plateforme permettant d'analyser :
+- L'attractivité des villes par score composite (notes + avis + check-ins)
+- La performance des catégories de restaurants
+- L'évolution temporelle de la satisfaction client
+- La tendance (montante / stable / déclinante) de chaque établissement
 
-## Important note regarding Docker Desktop
-Since Docker Desktop turned “Expose daemon on tcp://localhost:2375 without TLS” off by default there have been all kinds of connection problems running the complete docker-compose. Turning this option on again (Settings > General > Expose daemon on tcp://localhost:2375 without TLS) makes it all work. I’m still looking for a more secure solution to this.
+## ️ Stack technique
 
+| Composant | Technologie |
+|---|---|
+| Data Lake | HDFS (Hadoop 3.2.1) |
+| Traitement | Apache Spark 3.0.0 (Standalone) |
+| Metastore | Apache Hive 2.3.2 |
+| Base relationnelle | PostgreSQL 15 |
+| API | FastAPI + JWT (python-jose) |
+| Orchestration | Docker Compose |
+| Langage | Python 3 (PySpark) |
 
-## Quick Start HDFS
+---
 
-Copy breweries.csv to the namenode.
-```
-  docker cp breweries.csv namenode:breweries.csv
-```
+##  Datasets
 
-Go to the bash shell on the namenode with that same Container ID of the namenode.
-```
-  docker exec -it namenode bash
-```
+Source : **Yelp Open Dataset** — https://www.yelp.com/dataset
 
+| Fichier | Description | Taille |
+|---|---|---|
+| `yelp_academic_dataset_business.json` | Informations sur les établissements | ~119 MB |
+| `yelp_academic_dataset_checkin.json` | Historique des check-ins | ~287 MB |
+| `yelp_academic_dataset_review.json` | Avis clients (réduit à ~1 GB) | ~1 GB |
 
-Create a HDFS directory /data//openbeer/breweries.
+**Volume total après ingestion** : > 200 000 lignes 
 
-```
-  hdfs dfs -mkdir -p /data/openbeer/breweries
-```
+---
 
-Copy breweries.csv to HDFS:
-```
-  hdfs dfs -put breweries.csv /data/openbeer/breweries/breweries.csv
-```
-
-
-## Quick Start Spark (PySpark)
-
-Go to http://<dockerhadoop_IP_address>:8080 or http://localhost:8080/ on your Docker host (laptop) to see the status of the Spark master.
-
-Go to the command line of the Spark master and start PySpark.
-```
-  docker exec -it spark-master bash
-
-  /spark/bin/pyspark --master spark://spark-master:7077
-```
-
-Load breweries.csv from HDFS.
-```
-  brewfile = spark.read.csv("hdfs://namenode:9000/data/openbeer/breweries/breweries.csv")
-  
-  brewfile.show()
-+----+--------------------+-------------+-----+---+
-| _c0|                 _c1|          _c2|  _c3|_c4|
-+----+--------------------+-------------+-----+---+
-|null|                name|         city|state| id|
-|   0|  NorthGate Brewing |  Minneapolis|   MN|  0|
-|   1|Against the Grain...|   Louisville|   KY|  1|
-|   2|Jack's Abby Craft...|   Framingham|   MA|  2|
-|   3|Mike Hess Brewing...|    San Diego|   CA|  3|
-|   4|Fort Point Beer C...|San Francisco|   CA|  4|
-|   5|COAST Brewing Com...|   Charleston|   SC|  5|
-|   6|Great Divide Brew...|       Denver|   CO|  6|
-|   7|    Tapistry Brewing|     Bridgman|   MI|  7|
-|   8|    Big Lake Brewing|      Holland|   MI|  8|
-|   9|The Mitten Brewin...| Grand Rapids|   MI|  9|
-|  10|      Brewery Vivant| Grand Rapids|   MI| 10|
-|  11|    Petoskey Brewing|     Petoskey|   MI| 11|
-|  12|  Blackrocks Brewery|    Marquette|   MI| 12|
-|  13|Perrin Brewing Co...|Comstock Park|   MI| 13|
-|  14|Witch's Hat Brewi...|   South Lyon|   MI| 14|
-|  15|Founders Brewing ...| Grand Rapids|   MI| 15|
-|  16|   Flat 12 Bierwerks| Indianapolis|   IN| 16|
-|  17|Tin Man Brewing C...|   Evansville|   IN| 17|
-|  18|Black Acre Brewin...| Indianapolis|   IN| 18|
-+----+--------------------+-------------+-----+---+
-only showing top 20 rows
+##  Structure du projet
 
 ```
-
-
-
-## Quick Start Spark (Scala)
-
-Go to http://<dockerhadoop_IP_address>:8080 or http://localhost:8080/ on your Docker host (laptop) to see the status of the Spark master.
-
-Go to the command line of the Spark master and start spark-shell.
-```
-  docker exec -it spark-master bash
-  
-  spark/bin/spark-shell --master spark://spark-master:7077
-```
-
-Load breweries.csv from HDFS.
-```
-  val df = spark.read.csv("hdfs://namenode:9000/data/openbeer/breweries/breweries.csv")
-  
-  df.show()
-+----+--------------------+-------------+-----+---+
-| _c0|                 _c1|          _c2|  _c3|_c4|
-+----+--------------------+-------------+-----+---+
-|null|                name|         city|state| id|
-|   0|  NorthGate Brewing |  Minneapolis|   MN|  0|
-|   1|Against the Grain...|   Louisville|   KY|  1|
-|   2|Jack's Abby Craft...|   Framingham|   MA|  2|
-|   3|Mike Hess Brewing...|    San Diego|   CA|  3|
-|   4|Fort Point Beer C...|San Francisco|   CA|  4|
-|   5|COAST Brewing Com...|   Charleston|   SC|  5|
-|   6|Great Divide Brew...|       Denver|   CO|  6|
-|   7|    Tapistry Brewing|     Bridgman|   MI|  7|
-|   8|    Big Lake Brewing|      Holland|   MI|  8|
-|   9|The Mitten Brewin...| Grand Rapids|   MI|  9|
-|  10|      Brewery Vivant| Grand Rapids|   MI| 10|
-|  11|    Petoskey Brewing|     Petoskey|   MI| 11|
-|  12|  Blackrocks Brewery|    Marquette|   MI| 12|
-|  13|Perrin Brewing Co...|Comstock Park|   MI| 13|
-|  14|Witch's Hat Brewi...|   South Lyon|   MI| 14|
-|  15|Founders Brewing ...| Grand Rapids|   MI| 15|
-|  16|   Flat 12 Bierwerks| Indianapolis|   IN| 16|
-|  17|Tin Man Brewing C...|   Evansville|   IN| 17|
-|  18|Black Acre Brewin...| Indianapolis|   IN| 18|
-+----+--------------------+-------------+-----+---+
-only showing top 20 rows
-
+big-data-efrei/
+├── pipeline/
+│   ├── feeder.py                  # Ingestion → /raw
+│   ├── processor.py               # Traitement → /silver + Hive
+│   ├── datamart.py                # Création des datamarts → PostgreSQL
+│   ├── load_review_to_postgres.py # Chargement reviews dans PG
+│   └── postgresql-42.6.0.jar     # Driver JDBC
+├── api/
+│   ├── main.py                    # API FastAPI + JWT
+│   ├── requirements.txt
+│   ├── Dockerfile
+│   └── test_api.sh                # Script de test des endpoints
+├── docker-compose.yml             # Infrastructure complète
+├── hadoop.env                     # Config Hadoop
+├── hadoop-hive.env                # Config Hive
+└── README.md
 ```
 
-How cool is that? Your own Spark cluster to play with.
+---
 
+##  Lancer le projet
 
-## Quick Start Hive
+### Prérequis
 
-Go to the command line of the Hive server and start hiveserver2
+- Docker Desktop (16 GB RAM recommandé)
+- Python 3 (pour trim_json.py)
+- Fichiers Yelp JSON téléchargés
 
-```
-  docker exec -it hive-server bash
+### 1. Démarrer l'infrastructure
 
-  hiveserver2
-```
-
-Maybe a little check that something is listening on port 10000 now
-```
-  netstat -anp | grep 10000
-tcp        0      0 0.0.0.0:10000           0.0.0.0:*               LISTEN      446/java
-
+```bash
+docker-compose up -d
 ```
 
-Okay. Beeline is the command line interface with Hive. Let's connect to hiveserver2 now.
+Services démarrés : Namenode, Datanode, ResourceManager, NodeManager, Spark Master, 2 Workers, Hive, PostgreSQL, API.
 
-```
-  beeline -u jdbc:hive2://localhost:10000 -n root
-  
-  !connect jdbc:hive2://127.0.0.1:10000 scott tiger
-```
+Interfaces disponibles :
 
-Didn't expect to encounter scott/tiger again after my Oracle days. But there you have it. Definitely not a good idea to keep that user on production.
+| Interface | URL |
+|---|---|
+| Spark UI | http://localhost:8080 |
+| HDFS Namenode | http://localhost:9870 |
+| Resource Manager | http://localhost:8088 |
+| Spark Job UI | http://localhost:4040 |
+| API Swagger | http://localhost:8000/docs |
 
-Not a lot of databases here yet.
-```
-  show databases;
-  
-+----------------+
-| database_name  |
-+----------------+
-| default        |
-+----------------+
-1 row selected (0.335 seconds)
-```
+### 2. Charger les données dans HDFS
 
-Let's change that.
+```bash
+# Copier depuis la machine vers le container namenode
+docker cp yelp_academic_dataset_business.json namenode:/tmp/
+docker cp yelp_academic_dataset_checkin.json namenode:/tmp/
+docker cp yelp_academic_dataset_review.json namenode:/tmp/
 
-```
-  create database openbeer;
-  use openbeer;
+# Depuis le namenode, pousser vers HDFS
+docker exec -it namenode hdfs dfs -mkdir -p /data/yelp
+docker exec -it namenode hdfs dfs -put /tmp/yelp_academic_dataset_business.json /data/yelp/
+docker exec -it namenode hdfs dfs -put /tmp/yelp_academic_dataset_checkin.json /data/yelp/
+docker exec -it namenode hdfs dfs -put /tmp/yelp_academic_dataset_review.json /data/yelp/
 ```
 
-And let's create a table.
+### 3. Charger les reviews dans PostgreSQL
 
-```
-CREATE EXTERNAL TABLE IF NOT EXISTS breweries(
-    NUM INT,
-    NAME CHAR(100),
-    CITY CHAR(100),
-    STATE CHAR(100),
-    ID INT )
-ROW FORMAT DELIMITED
-FIELDS TERMINATED BY ','
-STORED AS TEXTFILE
-location '/data/openbeer/breweries';
+```bash
+docker exec -it spark-master /spark/bin/spark-submit --master spark://spark-master:7077 --deploy-mode client --executor-cores 2 --total-executor-cores 6 --executor-memory 3g --conf spark.executor.memoryOverhead=512m --conf spark.sql.shuffle.partitions=12 --packages org.postgresql:postgresql:42.6.0 --conf spark.app.hdfs.review=hdfs://namenode:9000/data/yelp/yelp_academic_dataset_review.json --conf spark.app.pg.url=jdbc:postgresql://postgres-yelp:5432/yelp_dw --conf spark.app.pg.user=yelp --conf spark.app.pg.password=yelp123 /opt/pipeline/load_review_to_postgres.py
 ```
 
-And have a little select statement going.
+### 4. Feeder
 
-```
-  select name from breweries limit 10;
-+----------------------------------------------------+
-|                        name                        |
-+----------------------------------------------------+
-| name                                                                                                 |
-| NorthGate Brewing                                                                                    |
-| Against the Grain Brewery                                                                            |
-| Jack's Abby Craft Lagers                                                                             |
-| Mike Hess Brewing Company                                                                            |
-| Fort Point Beer Company                                                                              |
-| COAST Brewing Company                                                                                |
-| Great Divide Brewing Company                                                                         |
-| Tapistry Brewing                                                                                     |
-| Big Lake Brewing                                                                                     |
-+----------------------------------------------------+
-10 rows selected (0.113 seconds)
+```bash
+docker exec -it spark-master /spark/bin/spark-submit --master spark://spark-master:7077 --deploy-mode client --executor-cores 2 --total-executor-cores 6 --executor-memory 3g --conf spark.executor.memoryOverhead=512m --conf spark.sql.shuffle.partitions=12 --packages org.postgresql:postgresql:42.6.0 --conf spark.app.hdfs.business=hdfs://namenode:9000/data/yelp/yelp_academic_dataset_business.json --conf spark.app.hdfs.checkin=hdfs://namenode:9000/data/yelp/yelp_academic_dataset_checkin.json --conf spark.app.raw.output=hdfs://namenode:9000/data/raw --conf spark.app.pg.url=jdbc:postgresql://postgres-yelp:5432/yelp_dw --conf spark.app.pg.user=yelp --conf spark.app.pg.password=yelp123 /opt/pipeline/feeder.py
 ```
 
-There you go: your private Hive server to play with.
+### 5. Processor
 
-
-## Configure Environment Variables
-
-The configuration parameters can be specified in the hadoop.env file or as environmental variables for specific services (e.g. namenode, datanode etc.):
-```
-  CORE_CONF_fs_defaultFS=hdfs://namenode:8020
+```bash
+docker exec -it spark-master /spark/bin/spark-submit --master spark://spark-master:7077 --deploy-mode client --executor-cores 2 --total-executor-cores 6 --executor-memory 3g --conf spark.executor.memoryOverhead=512m --conf spark.sql.shuffle.partitions=12 --conf spark.sql.warehouse.dir=hdfs://namenode:9000/user/hive/warehouse --conf spark.hadoop.hive.metastore.uris=thrift://hive-metastore:9083 --conf spark.hadoop.hive.exec.dynamic.partition=true --conf spark.hadoop.hive.exec.dynamic.partition.mode=nonstrict --conf spark.app.raw.business=hdfs://namenode:9000/data/raw/business --conf spark.app.raw.review=hdfs://namenode:9000/data/raw/review --conf spark.app.raw.checkin=hdfs://namenode:9000/data/raw/checkin --conf spark.app.silver.path=hdfs://namenode:9000/datalake/silver /opt/pipeline/processor.py
 ```
 
-CORE_CONF corresponds to core-site.xml. fs_defaultFS=hdfs://namenode:8020 will be transformed into:
-```
-  <property><name>fs.defaultFS</name><value>hdfs://namenode:8020</value></property>
-```
-To define dash inside a configuration parameter, use triple underscore, such as YARN_CONF_yarn_log___aggregation___enable=true (yarn-site.xml):
-```
-  <property><name>yarn.log-aggregation-enable</name><value>true</value></property>
+### 6. Datamart
+
+```bash
+docker exec -it spark-master /spark/bin/spark-submit --master spark://spark-master:7077 --deploy-mode client --executor-cores 2 --total-executor-cores 6 --executor-memory 3g --conf spark.executor.memoryOverhead=512m --conf spark.sql.shuffle.partitions=12 --conf spark.sql.warehouse.dir=hdfs://namenode:9000/user/hive/warehouse --conf spark.hadoop.hive.metastore.uris=thrift://hive-metastore:9083 --conf spark.app.pg.url=jdbc:postgresql://postgres-yelp:5432/yelp_dw --conf spark.app.pg.user=yelp --conf spark.app.pg.password=yelp123 --conf spark.app.silver.path=hdfs://namenode:9000/datalake/silver --packages org.postgresql:postgresql:42.6.0 /opt/pipeline/datamart.py
 ```
 
-The available configurations are:
-* /etc/hadoop/core-site.xml CORE_CONF
-* /etc/hadoop/hdfs-site.xml HDFS_CONF
-* /etc/hadoop/yarn-site.xml YARN_CONF
-* /etc/hadoop/httpfs-site.xml HTTPFS_CONF
-* /etc/hadoop/kms-site.xml KMS_CONF
-* /etc/hadoop/mapred-site.xml  MAPRED_CONF
+---
 
-If you need to extend some other configuration file, refer to base/entrypoint.sh bash script.
+## ️ Pipeline Spark
+
+### feeder.py — Ingestion (couche Bronze/Raw)
+
+- Lit `business.json` et `checkin.json` depuis HDFS
+- Lit les reviews depuis PostgreSQL via JDBC
+- Ajoute les colonnes `year`, `month`, `day` pour le partitionnement
+- Utilise `cache()` sur business et checkin, `persist(DISK_ONLY)` sur review
+- Écrit en Parquet partitionné `year/month/day` dans `/raw`
+- Logs dans `feeder.txt`
+
+### processor.py — Traitement (couche Silver)
+
+**5 règles de validation :**
+1. `business_id` non null
+2. Catégorie contient "Restaurants"
+3. Étoiles entre 1 et 5
+4. `review_id` non null
+5. Texte de l'avis non vide
+
+**Transformations :**
+- Nettoyage : normalisation city (lowercase), state (uppercase), cast des types
+- Jointure : business × review × checkin (left joins)
+- Window function : `rank_in_city` — classement des restaurants par ville (PARTITION BY city, ORDER BY stars DESC)
+- `cache()` sur business, `persist(DISK_ONLY)` sur le dataset jointé
+- Écriture Silver en Parquet + création tables Hive externes
+- Logs dans `processor.txt`
+
+### datamart.py — Datamarts
+
+Lit depuis Silver, écrit 5 tables dans PostgreSQL via JDBC.
+Logs dans `datamart.log`.
+
+---
+
+##  Datamarts
+
+| Table | Description |
+|---|---|
+| `dm1_top_villes` | Top 50 villes par score d'attractivité |
+| `dm2_performance_concepts` | Top 100 catégories par note moyenne |
+| `dm3_features_prediction` | Features par restaurant (ML-ready) |
+| `dm4_evolution_temporelle` | Volume d'avis et notes par mois |
+| `dm4_tendances_business` | Tendance montant/stable/déclinant par restaurant |
+| `dm5_voix_client` | Satisfaction et utilité des avis par restaurant |
+
+---
+
+##  API REST
+
+**Base URL** : `http://localhost:8000`
+
+**Documentation** : `http://localhost:8000/docs`
+
+### Authentification
+
+```bash
+POST /auth/login
+Content-Type: application/x-www-form-urlencoded
+Body: username=admin&password=admin123
+```
+
+Retourne un Bearer JWT (expire après 60 min).
+
+**Comptes disponibles :**
+- `admin` / `admin123`
+- `student` / `efrei2024`
+
+### Endpoints
+
+| Méthode | Endpoint | Description |
+|---|---|---|
+| POST | `/auth/login` | Obtenir un token JWT |
+| GET | `/auth/me` | Infos utilisateur connecté |
+| GET | `/health` | Statut API + DB |
+| GET | `/debug/db` | Liste les tables PostgreSQL |
+| GET | `/stats` | Nombre de lignes par datamart |
+| GET | `/datamarts/top-villes` | DM1 — filtrable par `state` |
+| GET | `/datamarts/categories` | DM2 |
+| GET | `/datamarts/restaurants` | DM3 — filtrable par `city`, `state`, `is_open` |
+| GET | `/datamarts/evolution-temporelle` | DM4 mensuel |
+| GET | `/datamarts/tendances` | DM4 — filtrable par `trend` |
+| GET | `/datamarts/voix-client` | DM5 — filtrable par `satisfaction` |
+
+**Pagination** : tous les endpoints acceptent `?page=1&page_size=10` (max 100).
+
+---
+
+##  Choix techniques
+
+### Partitionnement
+
+Les couches raw et silver sont partitionnées par `year/month/day`. La table `yelp_joined` est partitionnée par `state/city` car les requêtes business filtrent majoritairement par localisation.
+
+### Configuration Spark
+
+Environnement Spark Standalone avec 2 workers.
+
+### Pagination API
+
+Pagination offset-based (`page` + `page_size`) implémentée côté PostgreSQL avec `LIMIT/OFFSET`. Simple et standard, suffisant pour les volumes de datamarts (50 à 10 000 lignes).
+
+---
+
+##  Auteurs
+
+Ervin GOBY et Rayan TOUMERT

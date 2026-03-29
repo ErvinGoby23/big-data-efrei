@@ -234,4 +234,3 @@ finally:
     spark.stop()
     log.info("Spark session fermee")
 
-#docker exec -it spark-master /spark/bin/spark-submit --master spark://spark-master:7077 --deploy-mode client --executor-cores 2 --total-executor-cores 6 --executor-memory 3g --conf spark.executor.memoryOverhead=512m --conf spark.sql.shuffle.partitions=12 --conf spark.sql.warehouse.dir=hdfs://namenode:9000/user/hive/warehouse --conf spark.hadoop.hive.metastore.uris=thrift://hive-metastore:9083 --conf spark.hadoop.hive.exec.dynamic.partition=true --conf spark.hadoop.hive.exec.dynamic.partition.mode=nonstrict --conf spark.app.raw.business=hdfs://namenode:9000/data/raw/business --conf spark.app.raw.review=hdfs://namenode:9000/data/raw/review --conf spark.app.raw.checkin=hdfs://namenode:9000/data/raw/checkin --conf spark.app.silver.path=hdfs://namenode:9000/datalake/silver /opt/pipeline/processor.py
